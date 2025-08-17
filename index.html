@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>OS Maps + Gates (PMTiles)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- MapLibre GL -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+  <!-- PMTiles -->
+  <script src="https://unpkg.com/pmtiles@3.0.2/dist/pmtiles.js"></script>
+
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #map { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+
+<script>
+  // 1) Your OS API key
+  const OS_KEY = "5Wvvt83xAGunWFV88Agl3yXRr7rZ0mAh";
+
+  // 2) Enable pmtiles:// protocol
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
+
+  // 3) Build a MapLibre style with:
+  //    - OS raster basemap (Web Mercator)
+  //    - Gates vector source from PMTiles
+  const style = {
+    "version": 8,
+    "sources": {
+      "os-raster": {
+        "type": "raster",
+        "tiles": [
+          // OS Outdoor Web Mercator tiles
+          `https://api.os.uk/maps/raster/v1/zxy/Outdoor_3857/{z}/{x}/{y}.png?key=${OS_KEY}`
+        ],
+        "tileSize": 256,
+        "maxzoom": 19,
+        "attribution": "© Ordnance Survey"
+      },
+      "gates": {
+        "type": "vector",
+        // gates.pmtiles must be hosted alongside this HTML, or use an absolute URL
+        "url": "pmtiles://gates.pmtiles"
+      }
+    },
+    "layers": [
+      { "id": "os-raster", "type": "raster", "source": "os-raster" },
+
+      // Gates circle layer (only visible from zoom 12 upwards)
+      {
+        "id": "gates-circles",
+        "type": "circle",
+        "source": "gates",
+        "source-layer": "gates",   // must match: tippecanoe -l gates
+        "minzoom": 12,
+        "paint": {
+          "circle-radius": 4,
+          "circle-color": "#e53935",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1,
+          "circle-opacity": 0.9
+        }
+      }
+    ]
+  };
+
+  // 4) Create the map
+  const map = new maplibregl.Map({
+    container: "map",
+    style,
+    center: [-3.1, 54.5],  // roughly Cumbria
+    zoom: 10
+  });
+
+  // Optional: pointer cursor on hover
+  map.on("load", () => {
+    map.on("mouseenter", "gates-circles", () => map.getCanvas().style.cursor = "pointer");
+    map.on("mouseleave", "gates-circles", () => map.getCanvas().style.cursor = "");
+
+    // Popup on click (uses 'name' or 'id' property if present)
+    map.on("click", "gates-circles", (e) => {
+      const p = e.features && e.features[0] && e.features[0].properties || {};
+      const name = p.name || (p.id ? `Gate #${p.id}` : "Gate");
+      new maplibregl.Popup()
+        .setLngLat(e.lngLat)
+        .setHTML(`<strong>${name}</strong>`)
+        .addTo(map);
+    });
+  });
+</script>
+</body>
+</html>
