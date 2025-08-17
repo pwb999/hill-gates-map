@@ -33,17 +33,16 @@
   //    - Gates vector source from PMTiles
   const style = {
     "version": 8,
-    "sources": {
-      "os-raster": {
-        "type": "raster",
-        "tiles": [
-          // OS Outdoor Web Mercator tiles
-          `https://api.os.uk/maps/raster/v1/zxy/Outdoor_3857/{z}/{x}/{y}.png?key=${OS_KEY}`
-        ],
-        "tileSize": 256,
-        "maxzoom": 19,
-        "attribution": "© Ordnance Survey"
-      },
+"sources": {
+  "os-raster": {
+    "type": "raster",
+    "tiles": [
+      `https://api.os.uk/maps/raster/v1/zxy/Leisure_3857/{z}/{x}/{y}.png?key=${OS_KEY}`
+    ],
+    "tileSize": 256,
+    "maxzoom": 19,
+    "attribution": "© Ordnance Survey"
+  },
       "gates": {
         "type": "vector",
         // gates.pmtiles must be hosted alongside this HTML, or use an absolute URL
