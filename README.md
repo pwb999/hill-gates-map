@@ -9,7 +9,7 @@ Populate with the OM KML source of the 28,000 odd Gates
 
 2. Turn this csv into a GeoJson file
 
-3. Then use TippeCanoe to create the Mbtiles
+3. Then use TippeCanoe to create the Mbtiles hosted at https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/gates.pmtiles
 
 4. Create the index.html to serve up the map and data tiles
 
