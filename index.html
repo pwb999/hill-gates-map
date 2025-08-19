@@ -25,82 +25,71 @@
 <body>
   <div id="map"></div>
 
-  <script>
-    // Init map
-    var map = L.map('map', {
-      center: [54.46, -3.08],
-      zoom: 12
-    });
+<!-- MapLibre + PMTiles -->
+<link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@3.0.2/dist/pmtiles.js"></script>
 
-    // Thunderforest Outdoors (your key)
-    var outdoors = L.tileLayer(
-      'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}{r}.png?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae',
-      {
-        attribution: 'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, ' +
-                     'Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        minZoom: 2,
-        maxZoom: 20
-      }
-    ).addTo(map);
+<script>
+  // Register pmtiles:// for MapLibre
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
 
-    // Optional: OSM base
-    var osm = L.tileLayer(
-      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      { attribution: '© OpenStreetMap contributors' }
-    );
-
-    // ---- Gates overlay from PMTiles (vector tiles) ----
-    // NOTE: For Leaflet, vector tiles are shown via VectorGrid.
-    // The URL must point to a vector-tile service; pmtiles works via a custom handler.
-    // This minimal setup serves the tiles from a local pmtiles file using the pmtiles fetcher.
-    // If you built your tiles with tippecanoe -l gates, try 'gates' as the layer name; otherwise 'layer0'.
-      const pm = new pmtiles.PMTiles('https://pwb999.github.io/hill-gates-map/gates.pmtiles');
-    
-    // if hosted alongside index.html
-    const protocol = new pmtiles.Protocol();
-    protocol.add(pm);
-    // VectorGrid can consume a function returning an XHR URL; pmtiles exposes a custom URL scheme.
-    // Some Leaflet setups use a small proxy helper; the simplest approach is to use the protocol url:
-    var gates = L.vectorGrid.protobuf('pmtiles://gates.pmtiles', {
-      rendererFactory: L.canvas.tile,
-      vectorTileLayerStyles: {
-        // try 'gates' if you used -l gates; else 'layer0'
-        'gates': { radius: 3, fill: true, fillColor: '#e53935', color: '#fff', weight: 1, fillOpacity: 0.9 },
-        'layer0': { radius: 3, fill: true, fillColor: '#e53935', color: '#fff', weight: 1, fillOpacity: 0.9 }
+  const style = {
+    version: 8,
+    sources: {
+      thunderforest: {
+        type: "raster",
+        tiles: [
+          "https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae"
+        ],
+        tileSize: 256,
+        maxzoom: 20,
+        attribution:
+          'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       },
-      interactive: true,
-      minZoom: 8
-    });
+      gates: {
+        type: "vector",
+        url: "pmtiles://https://pwb999.github.io/hill-gates-map/gates.pmtiles"
+      }
+    },
+    layers: [
+      { id: "tf-base", type: "raster", source: "thunderforest" },
+      {
+        id: "gates-circles",
+        type: "circle",
+        source: "gates",
+        "source-layer": "gates",        // use "layer0" if your layer wasn't named with -l gates
+        minzoom: 8,
+        paint: {
+          "circle-radius": 3,
+          "circle-color": "#e53935",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1,
+          "circle-opacity": 0.9
+        }
+      }
+    ]
+  };
 
-    // Popups on click
-    gates.on('click', function (e) {
-      const p = e.layer && e.layer.properties || {};
-      const name = p.name || (p.id ? `Gate #${p.id}` : 'Gate');
-      L.popup().setLatLng(e.latlng).setContent(`<strong>${name}</strong>`).openOn(map);
-    });
+  const map = new maplibregl.Map({
+    container: "map",
+    style,
+    center: [-3.08, 54.46],
+    zoom: 12
+  });
 
-    // Add layer switcher
-    var baseMaps = {
-      "Thunderforest Outdoors": outdoors,
-      "OpenStreetMap": osm
-    };
-    var overlayMaps = {
-      "Gates": gates
-    };
-    L.control.layers(baseMaps, overlayMaps, { collapsed: true }).addTo(map);
+  map.on("click", "gates-circles", (e) => {
+    const p = e.features?.[0]?.properties || {};
+    const name = p.name || (p.id ? `Gate #${p.id}` : "Gate");
+    new maplibregl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(`<strong>${name}</strong>`)
+      .addTo(map);
+  });
 
-    // Add Fullscreen control (button top-left by default)
-    L.control.fullscreen({ position: 'topleft', title: 'Fullscreen' }).addTo(map);
-
-    // (Optional) react to fullscreen events
-    map.on('enterFullscreen', () => console.log('Entered fullscreen'));
-    map.on('exitFullscreen', () => {
-      console.log('Exited fullscreen');
-      map.invalidateSize();
-    });
-
-    // Add gates overlay by default (optional)
-    gates.addTo(map);
-  </script>
+  map.on("mouseenter", "gates-circles", () => (map.getCanvas().style.cursor = "pointer"));
+  map.on("mouseleave", "gates-circles", () => (map.getCanvas().style.cursor = ""));
+</script>
 </body>
 </html>
