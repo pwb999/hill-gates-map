@@ -9,24 +9,29 @@
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
-  <!-- PMTiles (adds pmtiles:// protocol for MapLibre) -->
+  <!-- PMTiles -->
   <script src="https://unpkg.com/pmtiles@3.0.2/dist/pmtiles.js"></script>
 
   <style>
     html, body { margin:0; height:100%; }
     #map { width:100%; height:100vh; }
-    .maplibregl-ctrl-attrib { font-size: 11px; }
   </style>
 </head>
 <body>
 <div id="map"></div>
 
 <script>
-  // 1) Register pmtiles:// with MapLibre
+  // Register pmtiles protocol
   const protocol = new pmtiles.Protocol();
   maplibregl.addProtocol("pmtiles", protocol.tile);
 
-  // 2) Build the style: Thunderforest raster + Gates vector (PMTiles)
+  // Point to your S3 file
+  const PMTILES_URL = "https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/gates.pmtiles";
+
+  // Attach PMTiles instance (so we can query metadata later if needed)
+  const p = new pmtiles.PMTiles(PMTILES_URL);
+  protocol.add(p);
+
   const style = {
     "version": 8,
     "sources": {
@@ -37,28 +42,25 @@
         ],
         "tileSize": 256,
         "maxzoom": 20,
-        "attribution": "Maps © <a href='https://www.thunderforest.com/'>Thunderforest</a>, Data © <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors"
+        "attribution": "Maps © <a href='https://www.thunderforest.com/'>Thunderforest</a>, Data © OSM"
       },
       "gates": {
         "type": "vector",
-        // Use the full URL on GitHub Pages
-        "url": "pmtiles://https://pwb999.github.io/hill-gates-map/gates.pmtiles"
+        "url": "pmtiles://" + PMTILES_URL
       }
     },
     "layers": [
       { "id": "tf-base", "type": "raster", "source": "thunderforest" },
-
-      // Gates (vector circles). If your tippecanoe layer wasn’t named, try source-layer "layer0"
       {
         "id": "gates-circles",
         "type": "circle",
         "source": "gates",
-        "source-layer": "gates",         // change to "layer0" if nothing shows
+        "source-layer": "gates",   // try "gates"; if nothing shows, change to "layer0"
         "minzoom": 8,
         "paint": {
           "circle-radius": 3,
           "circle-color": "#e53935",
-          "circle-stroke-color": "#ffffff",
+          "circle-stroke-color": "#fff",
           "circle-stroke-width": 1,
           "circle-opacity": 0.9
         }
@@ -66,35 +68,28 @@
     ]
   };
 
-  // 3) Create the map
   const map = new maplibregl.Map({
     container: "map",
     style,
-    center: [-3.08, 54.46],   // roughly Cumbria
+    center: [-3.08, 54.46], // Cumbria
     zoom: 12,
-    hash: true                // shareable URL with map state
+    hash: true
   });
 
-  // 4) Basic UI
-  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+  map.addControl(new maplibregl.NavigationControl(), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
-  // 5) Interactions: cursor + popup
-  map.on("load", () => {
-    map.on("mouseenter", "gates-circles", () => map.getCanvas().style.cursor = "pointer");
-    map.on("mouseleave", "gates-circles", () => map.getCanvas().style.cursor = "");
-    map.on("click", "gates-circles", (e) => {
-      const p = e.features?.[0]?.properties || {};
-      const name = p.name || (p.id ? `Gate #${p.id}` : "Gate");
-      new maplibregl.Popup()
-        .setLngLat(e.lngLat)
-        .setHTML(`<strong>${name}</strong>`)
-        .addTo(map);
-    });
+  map.on("load", async () => {
+    // Dynamically confirm the layer id inside your PMTiles metadata
+    const md = await p.getMetadata();
+    console.log("PMTiles metadata:", md);
   });
 
-  // 6) Helpful error log if tiles fail
-  map.on("error", (e) => console.error("MapLibre error:", e?.error || e));
+  map.on("click", "gates-circles", (e) => {
+    const props = e.features?.[0]?.properties || {};
+    const name = props.name || (props.id ? `Gate #${props.id}` : "Gate");
+    new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<b>${name}</b>`).addTo(map);
+  });
 </script>
 </body>
 </html>
