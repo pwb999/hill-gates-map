@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Hill Gates Map (MapLibre + Thunderforest + PMTiles)</title>
+  <title>Hill Furniture (Gates, Stiles, Kissing Gates, Walls)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- MapLibre GL -->
@@ -15,81 +15,189 @@
   <style>
     html, body { margin:0; height:100%; }
     #map { width:100%; height:100vh; }
+    .controls {
+      position:absolute; z-index:10; top:10px; left:10px;
+      background:rgba(255,255,255,.9); padding:10px 12px; border-radius:8px;
+      box-shadow:0 2px 8px rgba(0,0,0,.15);
+      font:13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .controls label { display:flex; gap:.5rem; align-items:center; margin:4px 0; cursor:pointer; }
+    .swatch { width:12px; height:12px; border-radius:50%; border:1px solid #0002; display:inline-block; }
+    .swatch-line { width:16px; height:0; border-top:3px solid; display:inline-block; }
   </style>
 </head>
 <body>
-<div id="map"></div>
+  <div id="map"></div>
 
-<script>
-  // Register pmtiles protocol
-  const protocol = new pmtiles.Protocol();
-  maplibregl.addProtocol("pmtiles", protocol.tile);
+  <!-- Toggle panel -->
+  <div class="controls">
+    <strong>Layers</strong>
+    <label><input type="checkbox" id="toggle-gates" checked /> <span class="swatch" style="background:#e53935"></span> Gates</label>
+    <label><input type="checkbox" id="toggle-stiles" checked /> <span class="swatch" style="background:#1e88e5"></span> Stiles</label>
+    <label><input type="checkbox" id="toggle-kissing" checked /> <span class="swatch" style="background:#43a047"></span> Kissing Gates</label>
+    <label><input type="checkbox" id="toggle-walls" checked /> <span class="swatch-line" style="border-color:#6d4c41"></span> Walls</label>
+  </div>
 
-  // Point to your S3 file
-  const PMTILES_URL = "https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/gates.pmtiles";
+  <script>
+    // Register pmtiles:// for MapLibre
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
 
-  // Attach PMTiles instance (so we can query metadata later if needed)
-  const p = new pmtiles.PMTiles(PMTILES_URL);
-  protocol.add(p);
+    // Thunderforest base (raster)
+    const thunderforestSource = {
+      type: "raster",
+      tiles: [
+        "https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae"
+      ],
+      tileSize: 256,
+      maxzoom: 20,
+      attribution: "Maps © <a href='https://www.thunderforest.com/'>Thunderforest</a>, Data © <a href='https://www.openstreetmap.org/copyright'>OSM</a>"
+    };
 
-  const style = {
-    "version": 8,
-    "sources": {
-      "thunderforest": {
-        "type": "raster",
-        "tiles": [
-          "https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae"
-        ],
-        "tileSize": 256,
-        "maxzoom": 20,
-        "attribution": "Maps © <a href='https://www.thunderforest.com/'>Thunderforest</a>, Data © OSM"
-      },
-      "gates": {
-        "type": "vector",
-        "url": "pmtiles://" + PMTILES_URL
+    // Your PMTiles (swap URLs if needed)
+    const PMTILES = {
+      gates:   "https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/gates.pmtiles",
+      stiles:  "https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/stiles.pmtiles",
+      kissing: "https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/kissing_gates.pmtiles",
+      walls:   "https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/walls.pmtiles"   // <-- replace if different
+    };
+
+    // Create PMTiles instances (for metadata + caching)
+    const pm = {
+      gates:   new pmtiles.PMTiles(PMTILES.gates),
+      stiles:  new pmtiles.PMTiles(PMTILES.stiles),
+      kissing: new pmtiles.PMTiles(PMTILES.kissing),
+      walls:   new pmtiles.PMTiles(PMTILES.walls)
+    };
+    protocol.add(pm.gates);
+    protocol.add(pm.stiles);
+    protocol.add(pm.kissing);
+    protocol.add(pm.walls);
+
+    // Base style (add overlays after load)
+    const style = {
+      version: 8,
+      sources: { thunderforest: thunderforestSource },
+      layers:  [{ id: "tf-base", type: "raster", source: "thunderforest" }]
+    };
+
+    const map = new maplibregl.Map({
+      container: "map",
+      style,
+      center: [-3.08, 54.46],
+      zoom: 12,
+      hash: true
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+
+    // Helper: add a PMTiles vector SOURCE and a LAYER (circle or line), auto-detecting source-layer id
+    async function addPmtilesLayer({ id, type, color, width = 2, minzoom = 8, pmtilesInstance, url }) {
+      // Determine internal vector layer name
+      let sourceLayer = id; // try matching by id first (if you used -l gates/stiles/walls)
+      try {
+        const md = await pmtilesInstance.getMetadata();
+        const available = (md && md.vector_layers) ? md.vector_layers.map(v => v.id) : [];
+        const exact = md?.vector_layers?.find(v => v.id === id);
+        sourceLayer = exact ? exact.id : (available[0] || sourceLayer);
+        console.log(`[${id}] using source-layer: ${sourceLayer} | available:`, available);
+      } catch (e) {
+        console.warn(`[${id}] metadata read failed; defaulting to "${sourceLayer}"`, e);
       }
-    },
-    "layers": [
-      { "id": "tf-base", "type": "raster", "source": "thunderforest" },
-      {
-        "id": "gates-circles",
-        "type": "circle",
-        "source": "gates",
-        "source-layer": "gates",   // try "gates"; if nothing shows, change to "layer0"
-        "minzoom": 8,
-        "paint": {
-          "circle-radius": 3,
-          "circle-color": "#e53935",
-          "circle-stroke-color": "#fff",
-          "circle-stroke-width": 1,
-          "circle-opacity": 0.9
+
+      // Add vector source (one per dataset)
+      const sourceName = `${id}-src`;
+      if (!map.getSource(sourceName)) {
+        map.addSource(sourceName, { type: "vector", url: "pmtiles://" + url });
+      }
+
+      // Add layer
+      const layerId = `${id}-${type}`;
+      if (!map.getLayer(layerId)) {
+        const layerDef = { id: layerId, type, source: sourceName, "source-layer": sourceLayer, minzoom };
+
+        if (type === "circle") {
+          layerDef.paint = {
+            "circle-radius": [
+              "interpolate", ["linear"], ["zoom"],
+              6, 2,
+              10, 3.5,
+              14, 6
+            ],
+            "circle-color": color,
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-width": 1,
+            "circle-opacity": 0.9
+          };
+        } else if (type === "line") {
+          layerDef.paint = {
+            "line-color": color,
+            "line-width": [
+              "interpolate", ["linear"], ["zoom"],
+              6, width,
+              12, width + 1.5,
+              15, width + 3
+            ],
+            // optional styling:
+            // "line-dasharray": [2, 2],
+            "line-opacity": 0.9
+          };
         }
+
+        map.addLayer(layerDef);
       }
-    ]
-  };
 
-  const map = new maplibregl.Map({
-    container: "map",
-    style,
-    center: [-3.08, 54.46], // Cumbria
-    zoom: 12,
-    hash: true
-  });
+      return { layerId };
+    }
 
-  map.addControl(new maplibregl.NavigationControl(), "top-right");
-  map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+    map.on("load", async () => {
+      // Add point layers
+      const gatesLayer   = await addPmtilesLayer({ id:"gates",   type:"circle", color:"#e53935", pmtilesInstance:pm.gates,   url:PMTILES.gates,   minzoom:8 });
+      const stilesLayer  = await addPmtilesLayer({ id:"stiles",  type:"circle", color:"#1e88e5", pmtilesInstance:pm.stiles,  url:PMTILES.stiles,  minzoom:8 });
+      const kissingLayer = await addPmtilesLayer({ id:"kissing", type:"circle", color:"#43a047", pmtilesInstance:pm.kissing, url:PMTILES.kissing, minzoom:8 });
 
-  map.on("load", async () => {
-    // Dynamically confirm the layer id inside your PMTiles metadata
-    const md = await p.getMetadata();
-    console.log("PMTiles metadata:", md);
-  });
+      // Add line layer (walls)
+      const wallsLayer   = await addPmtilesLayer({ id:"walls",   type:"line",   color:"#6d4c41", width:2, pmtilesInstance:pm.walls, url:PMTILES.walls, minzoom:8 });
 
-  map.on("click", "gates-circles", (e) => {
-    const props = e.features?.[0]?.properties || {};
-    const name = props.name || (props.id ? `Gate #${props.id}` : "Gate");
-    new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<b>${name}</b>`).addTo(map);
-  });
-</script>
+      // Popups for points
+      function bindPointPopup(layerId) {
+        map.on("mouseenter", layerId, () => map.getCanvas().style.cursor = "pointer");
+        map.on("mouseleave", layerId, () => map.getCanvas().style.cursor = "");
+        map.on("click", layerId, (e) => {
+          const p = e.features?.[0]?.properties || {};
+          const name = p.name || p.type || "Feature";
+          const extra = p.id ? `<div>ID: ${p.id}</div>` : "";
+          new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<strong>${name}</strong>${extra}`).addTo(map);
+        });
+      }
+      bindPointPopup("gates-circle");
+      bindPointPopup("stiles-circle");
+      bindPointPopup("kissing-circle");
+
+      // (Optional) simple info popup for walls
+      map.on("click", "walls-line", (e) => {
+        new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<strong>Wall</strong>`).addTo(map);
+      });
+
+      // Toggle helpers
+      function bindToggle(checkboxId, layerId) {
+        const el = document.getElementById(checkboxId);
+        const apply = () => {
+          const vis = el.checked ? "visible" : "none";
+          map.setLayoutProperty(layerId, "visibility", vis);
+        };
+        el.addEventListener("change", apply);
+        apply();
+      }
+
+      bindToggle("toggle-gates",   "gates-circle");
+      bindToggle("toggle-stiles",  "stiles-circle");
+      bindToggle("toggle-kissing", "kissing-circle");
+      bindToggle("toggle-walls",   "walls-line");
+    });
+
+    map.on("error", (e) => console.error("MapLibre error:", e?.error || e));
+  </script>
 </body>
 </html>
