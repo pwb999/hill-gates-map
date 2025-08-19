@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Hill Gates Map</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <!-- Fullscreen control -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.fullscreen@2.4.0/Control.FullScreen.css" />
+  <script src="https://unpkg.com/leaflet.fullscreen@2.4.0/Control.FullScreen.js"></script>
+
+  <!-- PMTiles + vector grid (if you’re drawing gates from PMTiles) -->
+  <script src="https://unpkg.com/pmtiles@3.0.2/dist/pmtiles.js"></script>
+  <script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.js"></script>
+
+  <style>
+    html, body { height:100%; margin:0; }
+    #map { width:100%; height:100vh; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script>
+    // Init map
+    var map = L.map('map', {
+      center: [54.46, -3.08],
+      zoom: 12
+    });
+
+    // Thunderforest Outdoors (your key)
+    var outdoors = L.tileLayer(
+      'https://tile.thunderforest.com/outdoors/{z}/{x}/{y}{r}.png?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae',
+      {
+        attribution: 'Maps © <a href="https://www.thunderforest.com/">Thunderforest</a>, ' +
+                     'Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        minZoom: 2,
+        maxZoom: 20
+      }
+    ).addTo(map);
+
+    // Optional: OSM base
+    var osm = L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { attribution: '© OpenStreetMap contributors' }
+    );
+
+    // ---- Gates overlay from PMTiles (vector tiles) ----
+    // NOTE: For Leaflet, vector tiles are shown via VectorGrid.
+    // The URL must point to a vector-tile service; pmtiles works via a custom handler.
+    // This minimal setup serves the tiles from a local pmtiles file using the pmtiles fetcher.
+    // If you built your tiles with tippecanoe -l gates, try 'gates' as the layer name; otherwise 'layer0'.
+      const pm = new pmtiles.PMTiles('https://pwb999.github.io/hill-gates-map/gates.pmtiles');
+    
+    // if hosted alongside index.html
+    const protocol = new pmtiles.Protocol();
+    protocol.add(pm);
+    // VectorGrid can consume a function returning an XHR URL; pmtiles exposes a custom URL scheme.
+    // Some Leaflet setups use a small proxy helper; the simplest approach is to use the protocol url:
+    var gates = L.vectorGrid.protobuf('pmtiles://gates.pmtiles', {
+      rendererFactory: L.canvas.tile,
+      vectorTileLayerStyles: {
+        // try 'gates' if you used -l gates; else 'layer0'
+        'gates': { radius: 3, fill: true, fillColor: '#e53935', color: '#fff', weight: 1, fillOpacity: 0.9 },
+        'layer0': { radius: 3, fill: true, fillColor: '#e53935', color: '#fff', weight: 1, fillOpacity: 0.9 }
+      },
+      interactive: true,
+      minZoom: 8
+    });
+
+    // Popups on click
+    gates.on('click', function (e) {
+      const p = e.layer && e.layer.properties || {};
+      const name = p.name || (p.id ? `Gate #${p.id}` : 'Gate');
+      L.popup().setLatLng(e.latlng).setContent(`<strong>${name}</strong>`).openOn(map);
+    });
+
+    // Add layer switcher
+    var baseMaps = {
+      "Thunderforest Outdoors": outdoors,
+      "OpenStreetMap": osm
+    };
+    var overlayMaps = {
+      "Gates": gates
+    };
+    L.control.layers(baseMaps, overlayMaps, { collapsed: true }).addTo(map);
+
+    // Add Fullscreen control (button top-left by default)
+    L.control.fullscreen({ position: 'topleft', title: 'Fullscreen' }).addTo(map);
+
+    // (Optional) react to fullscreen events
+    map.on('enterFullscreen', () => console.log('Entered fullscreen'));
+    map.on('exitFullscreen', () => {
+      console.log('Exited fullscreen');
+      map.invalidateSize();
+    });
+
+    // Add gates overlay by default (optional)
+    gates.addTo(map);
+  </script>
+</body>
+</html>
