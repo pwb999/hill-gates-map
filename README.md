@@ -1,11 +1,11 @@
 **ThunderForest - Outdoors Map using Mapbox and PMtile**
-
-**Layers**
+see https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/cumbria/index.html   
+**Layers**    
 So far:-   
---Gates
---Stiles
---Kissing_Gates
---Walls
+--Gates   
+--Stiles   
+--Kissing_Gates   
+--Walls   
 
 **Process**     
 Copy the KMZ from Mac/Organic Maps application.   
