@@ -1,18 +1,27 @@
-**OS Map with my Gates as red markers**
+**ThunderForest - Outdoors Map using Mapbox and PMtile**
 
-**Process**    
-Create a CSV file in BBEdit
-**Headers**  
-id, name, lon, lat
+**Layers**
+So far:-   
+--Gates
+--Stiles
+--Kissing_Gates
+--Walls
 
-Populate with the OM KML source of the 28,000 odd Gates
+**Process**     
+Copy the KMZ from Mac/Organic Maps application.   
 
-2. Turn this csv into a GeoJson file
+In BBEdit extract just the Name, Lon and Lat.    
+Add a Line Number   
+**Headers** -- ID, Name, Lon, Lat   
 
-3. Then use TippeCanoe to create the **pmtiles** hosted at https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/gates.pmtiles
+id, name, lon, lat   
+ 
+2. Convert this csv into a GeoJson file using python script .py   
 
-4. Create the index.html to serve up the map and data tiles
+3. Generate PMtiles using **-- TippeCanoe** to create the **pmtiles**   
 
-5. Install onto Github repo and use its PAGES Settings to create a quick website
+4. Update the **index.html** and push this to **S3** to serve up the ThunderForest map and point/polyline data tiles.   
+
+5. ALL these files should be uploaded to my S3 Bucket ensuring public access to these files as its a website.   
 
 ----Sunday 17th August 2025 19:21
