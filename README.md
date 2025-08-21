@@ -30,7 +30,7 @@ Slight difference in OSM mode between stiles points and OSM Stiles. Gates seem o
 
 It may be possible to make this OFFLINE completely if the tiles were in pmtiles format too.
 
----Future issues---
+---Future issues---           
 Look at how to ADD a point ie stile/gate etc directly.
 How can it be printed easily.    
 Scale bar.    
