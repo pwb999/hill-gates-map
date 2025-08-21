@@ -18,11 +18,12 @@
     .maplibregl-ctrl-attrib { font-size: 11px; }
 
     .panel {
-      position: absolute; top: 10px; left: 10px; z-index: 1;
+      position: absolute; top: 50px; left: 10px; z-index: 1;
       background: rgba(255,255,255,0.95); padding: 10px 12px; border-radius: 8px;
       font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
       max-width: 260px;
+      display: none; /* hidden by default */
     }
     .panel h3 { margin: 0 0 8px 0; font-size: 14px; font-weight: 700; }
     .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
@@ -30,14 +31,26 @@
     .sw-red    { background: #e53935; }
     .sw-blue   { background: #1e88e5; }
     .sw-green  { background: #43a047; }
-    .sw-brown  { background: #8d6e63; border-radius: 2px; height: 10px; }
+    .sw-black  { background: #000000; border-radius: 2px; height: 10px; }
     .legend-note { font-size: 12px; color: #555; margin-top: 6px; }
+
+    .legend-toggle {
+      position: absolute; top: 10px; left: 10px; z-index: 2;
+      background: #fff; border: 1px solid #ccc; border-radius: 4px;
+      padding: 6px 10px; font-size: 13px; cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+    .legend-toggle:hover {
+      background: #f0f0f0;
+    }
   </style>
 </head>
 <body>
 <div id="map"></div>
 
-<div class="panel">
+<button class="legend-toggle">Legend</button>
+
+<div class="panel" id="legend-panel">
   <h3>Basemap</h3>
   <label class="row"><input type="radio" name="basemap" value="outdoors" checked> Outdoors</label>
   <label class="row"><input type="radio" name="basemap" value="landscape"> Landscape</label>
@@ -47,7 +60,7 @@
   <label class="row"><input type="checkbox" id="chk-gates" checked><span class="swatch sw-red"></span> Gates</label>
   <label class="row"><input type="checkbox" id="chk-stiles" checked><span class="swatch sw-blue"></span> Stiles</label>
   <label class="row"><input type="checkbox" id="chk-kissing" checked><span class="swatch sw-green"></span> Kissing Gates</label>
-  <label class="row"><input type="checkbox" id="chk-walls" checked><span class="swatch sw-brown"></span> Walls (dashed)</label>
+  <label class="row"><input type="checkbox" id="chk-walls" checked><span class="swatch sw-black"></span> Walls (dashed)</label>
   <div class="legend-note">Tip: toggle layers for clarity when zoomed out.</div>
 </div>
 
@@ -93,17 +106,38 @@
       { "id": "osm-layer", "type": "raster", "source": "osm-standard", "layout": { "visibility": "none" } },
 
       { "id": "gates-circles", "type": "circle", "source": "gates", "source-layer": "gates",
-        "paint": { "circle-radius": 3, "circle-color": "#e53935", "circle-stroke-color": "#fff", "circle-stroke-width": 1 } },
+        "paint": {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3, 18, 5],
+          "circle-color": "#e53935",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1
+        }
+      },
       { "id": "stiles-circles", "type": "circle", "source": "stiles", "source-layer": "stiles",
-        "paint": { "circle-radius": 3, "circle-color": "#1e88e5", "circle-stroke-color": "#fff", "circle-stroke-width": 1 } },
+        "paint": {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3, 18, 5],
+          "circle-color": "#1e88e5",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1
+        }
+      },
       { "id": "kissing-circles", "type": "circle", "source": "kissing_gates", "source-layer": "kissing_gates",
-        "paint": { "circle-radius": 3, "circle-color": "#43a047", "circle-stroke-color": "#fff", "circle-stroke-width": 1 } },
+        "paint": {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3, 18, 5],
+          "circle-color": "#43a047",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1
+        }
+      },
       { "id": "walls-line", "type": "line", "source": "walls", "source-layer": "walls",
         "layout": { "line-cap": "round", "line-join": "round" },
-        "paint": { "line-color": "#8d6e63",
-                   "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 16, 6],
-                   "line-opacity": 0.9,
-                   "line-dasharray": [4, 2] } }
+        "paint": {
+          "line-color": "#000000",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 16, 3],
+          "line-opacity": 0.9,
+          "line-dasharray": [4, 2]
+        }
+      }
     ]
   };
 
@@ -136,6 +170,18 @@
         map.setLayoutProperty("tf-landscape-layer", "visibility", choice === "landscape" ? "visible" : "none");
         map.setLayoutProperty("osm-layer", "visibility", choice === "osm" ? "visible" : "none");
       });
+    });
+
+    // Legend toggle
+    const legendBtn = document.querySelector(".legend-toggle");
+    const legendPanel = document.getElementById("legend-panel");
+
+    legendBtn.addEventListener("click", () => {
+      if (legendPanel.style.display === "none") {
+        legendPanel.style.display = "block";
+      } else {
+        legendPanel.style.display = "none";
+      }
     });
   });
 </script>
