@@ -26,6 +26,9 @@ Add a Line Number
 The final version is now see https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/cumbria/index.html   
 Works very well. 
 
+Index25.html is the Vector 2 version which renders its own set of walls in a dashed line format.    
+EACH Feature can has its own theme/colour/style so its more versatile than the default Outdoors and Landscaper rasters.    
+
 Slight difference in OSM mode between stiles points and OSM Stiles. Gates seem ok..
 
 It may be possible to make this OFFLINE completely if the tiles were in pmtiles format too.
