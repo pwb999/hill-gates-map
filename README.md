@@ -38,13 +38,14 @@ GRID Overlay
 Marginalia
 
 --Thursday 21st August 2025
-**Ideas for development**
-Main issue is the cost of tiles from End Provider.
-The only cost free source is OSM where NO API required. Or perhaps OS Open Source tiles.
-Raster vs Vector
-Clearly vector is better as you can style EACH Feature to your own choice.
+**Ideas for development**   
+Main issue is the cost of tiles from End Provider.    
+The only cost free source is OSM where NO API required.     
+Or perhaps OS Open Source tiles.    
+**Raster vs Vector**   
+Clearly vector is better as you can style EACH Feature to your own choice.    
 
-OFFLINE - Can I build an offline map and data tile set in iphone format for FREE ????
+OFFLINE - Can I build an offline map and data tile set in iphone format for FREE ????    
 =====================================================================================
 
 
