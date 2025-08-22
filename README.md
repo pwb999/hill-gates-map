@@ -21,6 +21,23 @@ Add a Line Number
 
 5. ALL these files should be uploaded to my S3 Bucket ensuring public access to these files as its a website.   
 
+
+**Examples Displays**
+https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/cumbria/index23.html#   
+This clearly shows the Vector Landscape Features that can be Styled and shown on a base map. In this case Both versions of the Walls Layer can be toggled on/off.    
+
+
+
+
+
+
+
+
+
+
+
+
+
 ----Sunday 17th August 2025 19:21
 
 The final version is now see https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/cumbria/index.html   
