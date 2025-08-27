@@ -9,7 +9,8 @@ Result.
 offline iphone Cumbria Map with key layers 
 more prominent.
 
-
+Think about what layers I NEED. Then 
+exclude the rest to reduce fule size.
 
 
 **Layers**    
