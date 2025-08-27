@@ -1,8 +1,13 @@
 **ThunderForest - Outdoors Map using Mapbox and PMtile**     
 Offline PMTiles
-
-cumbria osm as pmtiles so offline
-add my pmtiles stiles, gates and walls
+===============
+cumbria osm as pmtiles; this is offline.     
+Add my pmtiles stiles, gates and walls.    
+Consider if able to change default OSM layers so I would not 
+need my own pmtiles.   
+Result.    
+offline iphone Cumbria Map with key layers 
+more prominent.
 
 
 
