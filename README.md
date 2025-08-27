@@ -1,4 +1,11 @@
 **ThunderForest - Outdoors Map using Mapbox and PMtile**     
+Offline PMTiles
+
+cumbria osm as pmtiles so offline
+add my pmtiles stiles, gates and walls
+
+
+
 
 **Layers**    
 So far:-     
