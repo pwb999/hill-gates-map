@@ -1,0 +1,245 @@
+# ====== CONFIG ======
+REGION="eu-west-2"
+TF_API_KEY="# ====== CONFIG ======
+REGION="eu-west-2"
+TF_API_KEY="REPLACE_WITH_YOUR_THUNDERFOREST_KEY"
+
+# ====== 1) Create the HTTP API ======
+API_ID=$(aws apigatewayv2 create-api \
+  --name "ThunderforestProxy" \
+  --protocol-type HTTP \
+  --region "$REGION" \
+  --query 'ApiId' --output text)
+echo "API_ID=$API_ID"
+
+# ====== 2) Create a single HTTP integration pointing at Thunderforest ======
+INTEGRATION_ID=$(aws apigatewayv2 create-integration \
+  --api-id "$API_ID" \
+  --integration-type HTTP_PROXY \
+  --integration-method GET \
+  --integration-uri "https://tile.thunderforest.com" \
+  --payload-format-version "1.0" \
+  --region "$REGION" \
+  --query 'IntegrationId' --output text)
+echo "INTEGRATION_ID=$INTEGRATION_ID"
+
+# ====== 3) Create routes for OUTDOORS and LANDSCAPE ======
+# These are the URLs your map will call (no .png at the end on the client)
+ROUTE_OUT=$(aws apigatewayv2 create-route \
+  --api-id "$API_ID" \
+  --route-key "GET /tiles/outdoors/{z}/{x}/{y}" \
+  --target "integrations/$INTEGRATION_ID" \
+  --region "$REGION" \
+  --query 'RouteId' --output text)
+echo "ROUTE_OUT=$ROUTE_OUT"
+
+ROUTE_LAND=$(aws apigatewayv2 create-route \
+  --api-id "$API_ID" \
+  --route-key "GET /tiles/landscape/{z}/{x}/{y}" \
+  --target "integrations/$INTEGRATION_ID" \
+  --region "$REGION" \
+  --query 'RouteId' --output text)
+echo "ROUTE_LAND=$ROUTE_LAND"
+
+# ====== 4) Parameter mapping on the INTEGRATION ======
+# We append ?apikey=... AND override the upstream path so API Gateway
+# requests e.g. /outdoors/12/2043/1363.png at Thunderforest.
+
+aws apigatewayv2 update-integration \
+  --api-id "$API_ID" \
+  --integration-id "$INTEGRATION_ID" \
+  --request-parameters "{
+    \"append:querystring.apikey\": \"$TF_API_KEY\",
+    \"overwrite:path\": \"/$request.path.style/$request.path.z/$request.path.x/$request.path.y.png\"
+  }" \
+  --region "$REGION" >/dev/null
+
+# NOTE:
+# - The expression $request.path.style is available if your route key contains {style}.
+#   Our two routes have style fixed in the path (outdoors/..., landscape/...), so we’ll
+#   set style via stage variables below (simple and robust).
+
+# Alternative: If your console complains about $request.path.style not existing,
+# do two separate integrations (one per style). Here we’ll do that for clarity:
+
+# ----- Per-style overrides (more explicit & reliable) -----
+# Create a second integration (LANDSCAPE) with its own path override.
+INTEGRATION_ID2=$(aws apigatewayv2 create-integration \
+  --api-id "$API_ID" \
+  --integration-type HTTP_PROXY \
+  --integration-method GET \
+  --integration-uri "https://tile.thunderforest.com" \
+  --payload-format-version "1.0" \
+  --region "$REGION" \
+  --query 'IntegrationId' --output text)
+echo "INTEGRATION_ID2=$INTEGRATION_ID2"
+
+# Attach landscape route to the 2nd integration
+aws apigatewayv2 update-route \
+  --api-id "$API_ID" \
+  --route-id "$ROUTE_LAND" \
+  --target "integrations/$INTEGRATION_ID2" \
+  --region "$REGION" >/dev/null
+
+# Set per-integration mappings:
+
+# OUTDOORS mapping: /outdoors/{z}/{x}/{y}.png + append apikey
+aws apigatewayv2 update-integration \
+  --api-id "$API_ID" \
+  --integration-id "$INTEGRATION_ID" \
+  --request-parameters "{
+    \"append:querystring.apikey\": \"$TF_API_KEY\",
+    \"overwrite:path\": \"/outdoors/$request.path.z/$request.path.x/$request.path.y.png\"
+  }" \
+  --region "$REGION" >/dev/null
+
+# LANDSCAPE mapping: /landscape/{z}/{x}/{y}.png + append apikey
+aws apigatewayv2 update-integration \
+  --api-id "$API_ID" \
+  --integration-id "$INTEGRATION_ID2" \
+  --request-parameters "{
+    \"append:querystring.apikey\": \"$TF_API_KEY\",
+    \"overwrite:path\": \"/landscape/$request.path.z/$request.path.x/$request.path.y.png\"
+  }" \
+  --region "$REGION" >/dev/null
+
+# ====== 5) Create a stage and deploy ======
+STAGE="prod"
+aws apigatewayv2 create-deployment \
+  --api-id "$API_ID" \
+  --description "Initial deploy" \
+  --region "$REGION" >/dev/null
+
+aws apigatewayv2 create-stage \
+  --api-id "$API_ID" \
+  --stage-name "$STAGE" \
+  --auto-deploy \
+  --region "$REGION" >/dev/null
+
+INVOKE_URL=$(aws apigatewayv2 get-apis --region "$REGION" \
+  --query "Items[?ApiId=='$API_ID'].ApiEndpoint" --output text)
+echo "Invoke URL: $INVOKE_URL/$STAGE"
+echo "Test outdoors tile:"
+echo "$INVOKE_URL/$STAGE/tiles/outdoors/6/32/20"
+echo "Test landscape tile:"
+echo "$INVOKE_URL/$STAGE/tiles/landscape/6/32/20""
+
+# ====== 1) Create the HTTP API ======
+API_ID=$(aws apigatewayv2 create-api \
+  --name "ThunderforestProxy" \
+  --protocol-type HTTP \
+  --region "$REGION" \
+  --query 'ApiId' --output text)
+echo "API_ID=$API_ID"
+
+# ====== 2) Create a single HTTP integration pointing at Thunderforest ======
+INTEGRATION_ID=$(aws apigatewayv2 create-integration \
+  --api-id "$API_ID" \
+  --integration-type HTTP_PROXY \
+  --integration-method GET \
+  --integration-uri "https://tile.thunderforest.com" \
+  --payload-format-version "1.0" \
+  --region "$REGION" \
+  --query 'IntegrationId' --output text)
+echo "INTEGRATION_ID=$INTEGRATION_ID"
+
+# ====== 3) Create routes for OUTDOORS and LANDSCAPE ======
+# These are the URLs your map will call (no .png at the end on the client)
+ROUTE_OUT=$(aws apigatewayv2 create-route \
+  --api-id "$API_ID" \
+  --route-key "GET /tiles/outdoors/{z}/{x}/{y}" \
+  --target "integrations/$INTEGRATION_ID" \
+  --region "$REGION" \
+  --query 'RouteId' --output text)
+echo "ROUTE_OUT=$ROUTE_OUT"
+
+ROUTE_LAND=$(aws apigatewayv2 create-route \
+  --api-id "$API_ID" \
+  --route-key "GET /tiles/landscape/{z}/{x}/{y}" \
+  --target "integrations/$INTEGRATION_ID" \
+  --region "$REGION" \
+  --query 'RouteId' --output text)
+echo "ROUTE_LAND=$ROUTE_LAND"
+
+# ====== 4) Parameter mapping on the INTEGRATION ======
+# We append ?apikey=... AND override the upstream path so API Gateway
+# requests e.g. /outdoors/12/2043/1363.png at Thunderforest.
+
+aws apigatewayv2 update-integration \
+  --api-id "$API_ID" \
+  --integration-id "$INTEGRATION_ID" \
+  --request-parameters "{
+    \"append:querystring.apikey\": \"$TF_API_KEY\",
+    \"overwrite:path\": \"/$request.path.style/$request.path.z/$request.path.x/$request.path.y.png\"
+  }" \
+  --region "$REGION" >/dev/null
+
+# NOTE:
+# - The expression $request.path.style is available if your route key contains {style}.
+#   Our two routes have style fixed in the path (outdoors/..., landscape/...), so we’ll
+#   set style via stage variables below (simple and robust).
+
+# Alternative: If your console complains about $request.path.style not existing,
+# do two separate integrations (one per style). Here we’ll do that for clarity:
+
+# ----- Per-style overrides (more explicit & reliable) -----
+# Create a second integration (LANDSCAPE) with its own path override.
+INTEGRATION_ID2=$(aws apigatewayv2 create-integration \
+  --api-id "$API_ID" \
+  --integration-type HTTP_PROXY \
+  --integration-method GET \
+  --integration-uri "https://tile.thunderforest.com" \
+  --payload-format-version "1.0" \
+  --region "$REGION" \
+  --query 'IntegrationId' --output text)
+echo "INTEGRATION_ID2=$INTEGRATION_ID2"
+
+# Attach landscape route to the 2nd integration
+aws apigatewayv2 update-route \
+  --api-id "$API_ID" \
+  --route-id "$ROUTE_LAND" \
+  --target "integrations/$INTEGRATION_ID2" \
+  --region "$REGION" >/dev/null
+
+# Set per-integration mappings:
+
+# OUTDOORS mapping: /outdoors/{z}/{x}/{y}.png + append apikey
+aws apigatewayv2 update-integration \
+  --api-id "$API_ID" \
+  --integration-id "$INTEGRATION_ID" \
+  --request-parameters "{
+    \"append:querystring.apikey\": \"$TF_API_KEY\",
+    \"overwrite:path\": \"/outdoors/$request.path.z/$request.path.x/$request.path.y.png\"
+  }" \
+  --region "$REGION" >/dev/null
+
+# LANDSCAPE mapping: /landscape/{z}/{x}/{y}.png + append apikey
+aws apigatewayv2 update-integration \
+  --api-id "$API_ID" \
+  --integration-id "$INTEGRATION_ID2" \
+  --request-parameters "{
+    \"append:querystring.apikey\": \"$TF_API_KEY\",
+    \"overwrite:path\": \"/landscape/$request.path.z/$request.path.x/$request.path.y.png\"
+  }" \
+  --region "$REGION" >/dev/null
+
+# ====== 5) Create a stage and deploy ======
+STAGE="prod"
+aws apigatewayv2 create-deployment \
+  --api-id "$API_ID" \
+  --description "Initial deploy" \
+  --region "$REGION" >/dev/null
+
+aws apigatewayv2 create-stage \
+  --api-id "$API_ID" \
+  --stage-name "$STAGE" \
+  --auto-deploy \
+  --region "$REGION" >/dev/null
+
+INVOKE_URL=$(aws apigatewayv2 get-apis --region "$REGION" \
+  --query "Items[?ApiId=='$API_ID'].ApiEndpoint" --output text)
+echo "Invoke URL: $INVOKE_URL/$STAGE"
+echo "Test outdoors tile:"
+echo "$INVOKE_URL/$STAGE/tiles/outdoors/6/32/20"
+echo "Test landscape tile:"
+echo "$INVOKE_URL/$STAGE/tiles/landscape/6/32/20"
