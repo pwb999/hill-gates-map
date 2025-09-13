@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Hill Gates Map (MapLibre + Thunderforest Vector v2 + PMTiles)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- MapLibre GL -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+  <!-- PMTiles -->
+  <script src="https://unpkg.com/pmtiles@3.0.2/dist/pmtiles.js"></script>
+
+  <!-- GPX/KML utilities -->
+  <script src="https://unpkg.com/@tmcw/togeojson"></script>
+  <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+
+  <style>
+    html, body { margin:0; height:100%; }
+    #map { width:100%; height:100vh; }
+    .maplibregl-ctrl-attrib { font-size: 11px; }
+
+    .panel {
+      position: absolute; top: 50px; left: 10px; z-index: 3;
+      background: rgba(255,255,255,0.95); padding: 10px 12px; border-radius: 8px;
+      font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      max-width: 280px;
+      display: none; /* hidden by default; toggled by button */
+    }
+    .panel h3 { margin: 8px 0 6px; font-size: 14px; font-weight: 700; }
+    .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.2); display: inline-block; flex: 0 0 14px; }
+    .sw-red    { background: #e53935; }
+    .sw-blue   { background: #1e88e5; }
+    .sw-green  { background: #43a047; }
+    .sw-black  { background: #000000; border-radius: 2px; height: 10px; }
+    .legend-note { font-size: 12px; color: #555; margin-top: 6px; }
+
+    .legend-toggle {
+      position: absolute; top: 10px; left: 10px; z-index: 4;
+      background: #fff; border: 1px solid #ccc; border-radius: 4px;
+      padding: 6px 10px; font-size: 13px; cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+    .legend-toggle:hover { background: #f0f0f0; }
+
+    /* Popup readability */
+    .maplibregl-popup-content {
+      padding: 8px 10px;
+      font: 12px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    .popup-title { font-weight: 700; margin-bottom: 4px; }
+    .popup-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+    .popup-key { color: #444; }
+    .popup-val { color: #111; }
+
+    /* GPX/KML loader UI */
+    #gpxkml-ui {
+      position:absolute; left:10px; bottom:12px; z-index:4;
+      background:#fff; padding:8px 10px; border-radius:8px;
+      font: 14px/1.25 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      box-shadow:0 1px 6px rgba(0,0,0,.15);
+    }
+    #gpxkml-ui .hint { font-size:12px; color:#555; margin-top:6px; }
+    #gpxkml-input { max-width: 220px; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+
+<button class="legend-toggle">Legend</button>
+
+<div class="panel" id="legend-panel">
+  <h3>Basemap</h3>
+  <label class="row"><input type="radio" name="basemap" value="outdoors" checked> Thunderforest Outdoors (raster)</label>
+  <label class="row"><input type="radio" name="basemap" value="landscape"> Thunderforest Landscape (raster)</label>
+  <label class="row"><input type="radio" name="basemap" value="osm"> OSM Standard (raster)</label>
+
+  <h3>TF Vector Layers</h3>
+  <label class="row"><input type="checkbox" id="chk-tf-rivers" checked><span class="swatch"></span> Rivers (vector)</label>
+  <label class="row"><input type="checkbox" id="chk-tf-buildings" checked><span class="swatch"></span> Buildings (vector)</label>
+  <label class="row"><input type="checkbox" id="chk-tf-contours" checked><span class="swatch"></span> Contours (vector)</label>
+
+  <h3>Your Layers</h3>
+  <label class="row"><input type="checkbox" id="chk-gates" checked><span class="swatch sw-red"></span> Gates</label>
+  <label class="row"><input type="checkbox" id="chk-stiles" checked><span class="swatch sw-blue"></span> Stiles</label>
+  <label class="row"><input type="checkbox" id="chk-kissing" checked><span class="swatch sw-green"></span> Kissing Gates</label>
+  <label class="row"><input type="checkbox" id="chk-walls" checked><span class="swatch sw-black"></span> Walls (dashed)</label>
+
+  <div class="legend-note">Tip: use vector layers + hide raster for a clean, fully styleable map.</div>
+</div>
+
+<!-- GPX/KML loader UI -->
+<div id="gpxkml-ui">
+  <label>Load GPX/KML: <input id="gpxkml-input" type="file" accept=".gpx,.kml" multiple></label>
+  <button id="gpxkml-clear">Clear</button>
+  <div class="hint">Tip: drag &amp; drop GPX/KML anywhere on the map.</div>
+  <div id="gpxkml-status" class="hint"></div>
+</div>
+
+<script>
+  // === PMTiles protocol ===
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
+
+  // === Data URLs ===
+  const BASE = "https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/cumbria/";
+  const GATES_URL   = BASE + "gates.pmtiles";
+  const STILES_URL  = BASE + "stiles.pmtiles";
+  const KISSING_URL = BASE + "kissing_gates.pmtiles";
+  const WALLS_URL   = BASE + "walls.pmtiles";
+
+  [GATES_URL, STILES_URL, KISSING_URL, WALLS_URL].forEach(u => protocol.add(new pmtiles.PMTiles(u)));
+
+  // Thunderforest Vector v2 TileJSON (replace YOUR_API_KEY if needed)
+  const TF_V2_TILEJSON = "https://tile.thunderforest.com/thunderforest.outdoors-v2.json?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae";
+
+  // === Map style ===
+  const style = {
+    "version": 8,
+    "sources": {
+      /* Raster basemaps */
+      "tf-outdoors": {
+        "type": "raster",
+        "tiles": ["https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae"],
+        "tileSize": 256, "maxzoom": 20
+      },
+      "tf-landscape": {
+        "type": "raster",
+        "tiles": ["https://tile.thunderforest.com/landscape/{z}/{x}/{y}.png?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae"],
+        "tileSize": 256, "maxzoom": 20
+      },
+      "osm-standard": {
+        "type": "raster",
+        "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        "tileSize": 256, "maxzoom": 19,
+        "attribution": "© OpenStreetMap contributors"
+      },
+
+      /* Thunderforest Vector v2 */
+      "tf-v2": { "type": "vector", "url": TF_V2_TILEJSON },
+
+      /* Your PMTiles layers */
+      "gates":         { "type": "vector", "url": "pmtiles://" + GATES_URL },
+      "stiles":        { "type": "vector", "url": "pmtiles://" + STILES_URL },
+      "kissing_gates": { "type": "vector", "url": "pmtiles://" + KISSING_URL },
+      "walls":         { "type": "vector", "url": "pmtiles://" + WALLS_URL }
+    },
+    "layers": [
+      /* Raster layers */
+      { "id": "tf-outdoors-layer", "type": "raster", "source": "tf-outdoors", "layout": { "visibility": "visible" } },
+      { "id": "tf-landscape-layer", "type": "raster", "source": "tf-landscape", "layout": { "visibility": "none" } },
+      { "id": "osm-layer", "type": "raster", "source": "osm-standard", "layout": { "visibility": "none" } },
+
+      /* Thunderforest Vector layers */
+      { "id": "tf-rivers", "type": "line", "source": "tf-v2", "source-layer": "waterway",
+        "layout": { "visibility": "visible" },
+        "paint": {
+          "line-color": "#1e90ff",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 7, 0.4, 10, 0.8, 14, 1.4, 18, 2.4]
+        }
+      },
+      { "id": "tf-buildings", "type": "fill", "source": "tf-v2", "source-layer": "building",
+        "layout": { "visibility": "visible" },
+        "paint": {
+          "fill-color": "#cfcfcf",
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 12, 0.2, 16, 0.6]
+        }
+      },
+      { "id": "tf-contours", "type": "fill", "source": "tf-v2", "source-layer": "elevation",
+        "layout": { "visibility": "visible" },
+        "filter": ["all", [">=", ["get","height"], 0], ["==", ["%", ["get","height"], 50], 0]],
+        "paint": {
+          "fill-color": "rgba(0,0,0,0)",
+          "fill-outline-color": "#8c6f4a",
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.15, 14, 0.45]
+        }
+      },
+
+      /* Your overlays */
+      { "id": "gates-circles", "type": "circle", "source": "gates", "source-layer": "gates",
+        "paint": {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3, 18, 5],
+          "circle-color": "#e53935",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1
+        }
+      },
+      { "id": "stiles-circles", "type": "circle", "source": "stiles", "source-layer": "stiles",
+        "paint": {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3, 18, 5],
+          "circle-color": "#1e88e5",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1
+        }
+      },
+      { "id": "kissing-circles", "type": "circle", "source": "kissing_gates", "source-layer": "kissing_gates",
+        "paint": {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3, 18, 5],
+          "circle-color": "#43a047",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1
+        }
+      },
+      { "id": "walls-line", "type": "line", "source": "walls", "source-layer": "walls",
+        "layout": { "line-cap": "round", "line-join": "round" },
+        "paint": {
+          "line-color": "#000000",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 16, 3],
+          "line-opacity": 0.9,
+          "line-dasharray": [4, 2]
+        }
+      }
+    ]
+  };
+
+  // === Create map ===
+  const map = new maplibregl.Map({
+    container: "map",
+    style,
+    center: [-3.08, 54.46],
+    zoom: 12,
+    hash: true
+  });
+
+  function setVisibility(layerId, visible) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+    }
+  }
+
+  // --- Helpers for popup content ---
+  function escapeHtml(str) {
+    return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+  function propsToHtml(props) {
+    const titleKeys = ["name","ref","id","type","@id"];
+    let title=null; for (const k of titleKeys) if (props && props[k]) { title=`${k}: ${props[k]}`; break; }
+    const skip = new Set(["geometry","geom","layer","source"]);
+    const rows=[];
+    for (const [k,v] of Object.entries(props||{})) {
+      if (skip.has(k) || v===null || v===undefined || v==="") continue;
+      rows.push(`<div class="popup-key">${escapeHtml(k)}</div><div class="popup-val">${escapeHtml(v)}</div>`);
+    }
+    return `${title?`<div class="popup-title">${escapeHtml(title)}</div>`:""}<div class="popup-grid">${rows.join("")||"<div class='popup-key'>No attributes</div><div class='popup-val'>—</div>"}</div>`;
+  }
+
+  map.on("load", () => {
+    // Ensure TF vector layers are *below* your overlays (optional if already ordered)
+    ["tf-contours","tf-buildings","tf-rivers"].forEach(id => {
+      if (map.getLayer(id) && map.getLayer("gates-circles")) {
+        map.moveLayer(id, "gates-circles");
+      }
+    });
+
+    // Layer toggles (your overlays)
+    document.getElementById("chk-gates").onchange   = e => setVisibility("gates-circles", e.target.checked);
+    document.getElementById("chk-stiles").onchange  = e => setVisibility("stiles-circles", e.target.checked);
+    document.getElementById("chk-kissing").onchange = e => setVisibility("kissing-circles", e.target.checked);
+    document.getElementById("chk-walls").onchange   = e => setVisibility("walls-line", e.target.checked);
+
+    // TF vector toggles
+    document.getElementById("chk-tf-rivers").onchange   = e => setVisibility("tf-rivers", e.target.checked);
+    document.getElementById("chk-tf-buildings").onchange= e => setVisibility("tf-buildings", e.target.checked);
+    document.getElementById("chk-tf-contours").onchange = e => setVisibility("tf-contours", e.target.checked);
+
+    // Basemap (raster) toggles
+    document.querySelectorAll("input[name='basemap']").forEach(radio => {
+      radio.addEventListener("change", e => {
+        const choice = e.target.value;
+        map.setLayoutProperty("tf-outdoors-layer", "visibility", choice === "outdoors" ? "visible" : "none");
+        map.setLayoutProperty("tf-landscape-layer", "visibility", choice === "landscape" ? "visible" : "none");
+        map.setLayoutProperty("osm-layer", "visibility", choice === "osm" ? "visible" : "none");
+      });
+    });
+
+    // Legend toggle
+    const legendBtn = document.querySelector(".legend-toggle");
+    const legendPanel = document.getElementById("legend-panel");
+    legendBtn.addEventListener("click", () => {
+      legendPanel.style.display = (legendPanel.style.display === "none" || !legendPanel.style.display) ? "block" : "none";
+    });
+
+    // Scale bar (imperial: miles/feet)
+    const scale = new maplibregl.ScaleControl({ maxWidth: 120, unit: "imperial" });
+    map.addControl(scale, "bottom-left");
+
+    // Geolocate control (top-right)
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserHeading: true,
+      fitBoundsOptions: { maxZoom: 15 }
+    });
+    map.addControl(geolocate, "top-right");
+
+    // Navigation control (zoom + compass, top-right)
+    const nav = new maplibregl.NavigationControl({ visualizePitch: true });
+    map.addControl(nav, "top-right");
+
+    // Hover popup for your point layers
+    const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+    function attachHover(layerId) {
+      map.on("mouseenter", layerId, () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mousemove", layerId, (e) => {
+        if (!e.features || !e.features.length) return;
+        const f = e.features[0];
+        hoverPopup.setLngLat(e.lngLat).setHTML(propsToHtml(f.properties||{})).addTo(map);
+      });
+      map.on("mouseleave", layerId, () => { map.getCanvas().style.cursor = ""; hoverPopup.remove(); });
+    }
+    attachHover("gates-circles");
+    attachHover("stiles-circles");
+    attachHover("kissing-circles");
+  });
+
+  /* ================================
+     GPX / KML LOADER (adds a single
+     GeoJSON source + 3 layers)
+     ================================ */
+  const GPXKML_SOURCE_ID = 'gpxkml-source';
+  const GPXKML_FILL_ID   = 'gpxkml-fill';
+  const GPXKML_LINE_ID   = 'gpxkml-line';
+  const GPXKML_POINT_ID  = 'gpxkml-point';
+
+  const LINE_COLOR = '#007aff';
+  const LINE_WIDTH = 3;
+  const POINT_COLOR = '#e91e63';
+  const POINT_RADIUS = 5;
+  const FILL_COLOR = '#00b894';
+  const FILL_OPACITY = 0.25;
+
+  let gpxkmlData = { type: 'FeatureCollection', features: [] };
+
+  function ensureGpxKmlLayers() {
+    if (!map.getSource(GPXKML_SOURCE_ID)) {
+      map.addSource(GPXKML_SOURCE_ID, { type: 'geojson', data: gpxkmlData });
+    }
+    if (!map.getLayer(GPXKML_FILL_ID)) {
+      map.addLayer({
+        id: GPXKML_FILL_ID, type: 'fill', source: GPXKML_SOURCE_ID,
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: { 'fill-color': FILL_COLOR, 'fill-opacity': FILL_OPACITY }
+      });
+    }
+    if (!map.getLayer(GPXKML_LINE_ID)) {
+      map.addLayer({
+        id: GPXKML_LINE_ID, type: 'line', source: GPXKML_SOURCE_ID,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: { 'line-color': LINE_COLOR, 'line-width': LINE_WIDTH }
+      });
+    }
+    if (!map.getLayer(GPXKML_POINT_ID)) {
+      map.addLayer({
+        id: GPXKML_POINT_ID, type: 'circle', source: GPXKML_SOURCE_ID,
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: { 'circle-radius': POINT_RADIUS, 'circle-color': POINT_COLOR, 'circle-stroke-color':'#fff', 'circle-stroke-width':1 }
+      });
+    }
+  }
+
+  async function fileToGeoJSON(file) {
+    const text = await file.text();
+    const xml = new DOMParser().parseFromString(text, 'text/xml');
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.gpx'))  return toGeoJSON.gpx(xml);
+    if (name.endsWith('.kml'))  return toGeoJSON.kml(xml);
+    throw new Error('Unsupported file type: ' + file.name);
+  }
+
+  function addFeatures(gj, label) {
+    (gj.features || []).forEach(f => {
+      f.properties = f.properties || {};
+      if (!f.properties._source) f.properties._source = label || 'GPX/KML';
+    });
+    gpxkmlData.features.push(...(gj.features || []));
+    map.getSource(GPXKML_SOURCE_ID).setData(gpxkmlData);
+
+    const bbox = turf.bbox(gpxkmlData);
+    if (Number.isFinite(bbox[0])) {
+      map.fitBounds([[bbox[0],bbox[1]],[bbox[2],bbox[3]]], { padding: 40, maxZoom: 16 });
+    }
+    setStatus(`${gpxkmlData.features.length} features loaded`);
+  }
+
+  function setStatus(msg) {
+    const el = document.getElementById('gpxkml-status');
+    if (el) el.textContent = msg || '';
+  }
+
+  // File input
+  document.getElementById('gpxkml-input').addEventListener('change', async (e) => {
+    ensureGpxKmlLayers();
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      try { const gj = await fileToGeoJSON(file); addFeatures(gj, file.name); }
+      catch (err) { alert('Failed to load ' + file.name + ':\n' + err.message); }
+    }
+    e.target.value = '';
+  });
+
+  // Drag & drop on the map canvas
+  map.getCanvas().addEventListener('dragover', e => { e.preventDefault(); });
+  map.getCanvas().addEventListener('drop', async e => {
+    e.preventDefault();
+    ensureGpxKmlLayers();
+    const files = Array.from(e.dataTransfer.files || []);
+    if (!files.length) return;
+    for (const file of files) {
+      try { const gj = await fileToGeoJSON(file); addFeatures(gj, file.name); }
+      catch (err) { alert('Failed to load ' + file.name + ':\n' + err.message); }
+    }
+  });
+
+  // Clear button
+  document.getElementById('gpxkml-clear').addEventListener('click', () => {
+    gpxkmlData = { type: 'FeatureCollection', features: [] };
+    if (map.getSource(GPXKML_SOURCE_ID)) map.getSource(GPXKML_SOURCE_ID).setData(gpxkmlData);
+    setStatus('Cleared');
+  });
+
+  // Click popup for loaded GPX/KML features
+  map.on('click', (e) => {
+    const feats = map.queryRenderedFeatures(e.point, { layers: [GPXKML_POINT_ID, GPXKML_LINE_ID, GPXKML_FILL_ID] });
+    if (!feats.length) return;
+    const html = propsToHtml(feats[0].properties || {});
+    new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
+  });
+
+  // Re-add layers if style changes/reloads
+  if (map.isStyleLoaded()) ensureGpxKmlLayers();
+  map.on('load', ensureGpxKmlLayers);
+  map.on('styledata', ensureGpxKmlLayers);
+</script>
+</body>
+</html>

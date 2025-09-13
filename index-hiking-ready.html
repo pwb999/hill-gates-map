@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Cumbria Hiking Map (PMTiles)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- MapLibre GL -->
+  <link
+    href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css"
+    rel="stylesheet"
+  />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <!-- PMTiles v3 -->
+  <script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
+
+  <style>
+    html,body,#map { height: 100%; margin: 0; }
+    .panel{
+      position:absolute; left:16px; top:16px;
+      background:#fff; border-radius:12px; padding:12px 14px;
+      font: 14px system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, sans-serif;
+      box-shadow: 0 10px 24px rgba(0,0,0,.12);
+      max-width: 320px; line-height: 1.35;
+    }
+    .panel h3 { margin: 0 0 6px 0; font-size: 18px; }
+    .panel code { background:#f3f4f6; padding:2px 6px; border-radius:6px; }
+    .panel label { display:block; margin:6px 0; cursor:pointer; }
+    .att{
+      position:absolute; right:10px; bottom:8px;
+      background:#fff9; padding:4px 8px; border-radius:8px;
+      font:12px system-ui
+    }
+    .att a{ color:#064; text-decoration:none }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="panel" id="legend">
+    <h3>Hiking map</h3>
+    Source: <code>cumbria.pmtiles</code>
+    <div style="margin-top:8px">
+      <label><input type="checkbox" data-layer="parks" checked> Parks</label>
+      <label><input type="checkbox" data-layer="water" checked> Water</label>
+      <label><input type="checkbox" data-layer="land" checked> Land (landcover/landuse)</label>
+      <label><input type="checkbox" data-layer="footpaths" checked> Footpaths / bridleways</label>
+      <label><input type="checkbox" data-layer="tracks" checked> Tracks</label>
+      <label><input type="checkbox" data-layer="roads" checked> Roads</label>
+      <label><input type="checkbox" data-layer="peaks" checked> Peaks</label>
+      <label><input type="checkbox" data-layer="places" checked> Places</label>
+    </div>
+    <div style="margin-top:6px; font-size:12px; color:#555">
+      Tip: zoom in to see peaks and smaller paths.
+    </div>
+  </div>
+
+  <div class="att">
+    © <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a>,
+    © <a href="https://www.openstreetmap.org/copyright" target="_blank">OSM contributors</a>
+  </div>
+
+  <script>
+    // Hook PMTiles into MapLibre
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+
+    const map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+        sources: {
+          // Your local PMTiles file in the same folder
+          omv: {
+            type: "vector",
+            url: "pmtiles://cumbria.pmtiles"
+          }
+        },
+        layers: [
+          // --- LAND ---
+          {
+            id: "land",
+            type: "fill",
+            source: "omv",
+            "source-layer": "landcover",
+            paint: { "fill-color": "#eef2e6", "fill-opacity": 0.8 }
+          },
+          {
+            id: "landuse",
+            type: "fill",
+            source: "omv",
+            "source-layer": "landuse",
+            paint: { "fill-color": "#eff6eb", "fill-opacity": 0.6 }
+          },
+
+          // --- WATER ---
+          {
+            id: "water",
+            type: "fill",
+            source: "omv",
+            "source-layer": "water",
+            paint: { "fill-color": "#bcd9ea" }
+          },
+          {
+            id: "waterway",
+            type: "line",
+            source: "omv",
+            "source-layer": "waterway",
+            paint: { "line-color": "#92c0d9", "line-width": 1 }
+          },
+
+          // --- PARKS ---
+          {
+            id: "parks",
+            type: "fill",
+            source: "omv",
+            "source-layer": "park",
+            paint: { "fill-color": "#cfe9b9", "fill-opacity": 0.8 }
+          },
+
+          // --- TRACKS / PATHS / ROADS ---
+          // Footpaths and bridleways (emphasised)
+          {
+            id: "footpaths",
+            type: "line",
+            source: "omv",
+            "source-layer": "transportation",
+            filter: ["any",
+              ["==", ["get","class"], "path"],
+              ["all", ["==", ["get","class"], "track"], ["==", ["get","foot"], "designated"]],
+              ["==", ["get","horse"], "designated"],
+              ["==", ["get","bicycle"], "designated"]
+            ],
+            paint: { "line-color": "#1f8a3a", "line-width": 2 }
+          },
+          // General tracks (lighter/dashed)
+          {
+            id: "tracks",
+            type: "line",
+            source: "omv",
+            "source-layer": "transportation",
+            filter: ["all",
+              ["==", ["get","class"], "track"],
+              ["!=", ["get","foot"], "designated"]
+            ],
+            paint: { "line-color": "#6a8f6a", "line-width": 1.5, "line-dasharray":[2,2] }
+          },
+          // Car roads under paths so paths stay visible
+          {
+            id: "roads",
+            type: "line",
+            source: "omv",
+            "source-layer": "transportation",
+            filter: ["in", ["get","class"], ["literal", ["primary","secondary","tertiary","residential","service","unclassified"]]],
+            paint: { "line-color": "#9aa1a8", "line-width": 2.2 }
+          },
+
+          // --- PEAKS ---
+          {
+            id: "peaks",
+            type: "symbol",
+            source: "omv",
+            "source-layer": "mountain_peak",
+            minzoom: 10,
+            layout: {
+              "icon-image": "triangle-11",
+              "icon-size": 1,
+              "icon-allow-overlap": true,
+              "text-field": ["coalesce", ["get","name"], ["get","name_en"]],
+              "text-size": 12,
+              "text-offset": [0, 0.9]
+            },
+            paint: {
+              "text-halo-color":"#fff",
+              "text-halo-width":1,
+              "text-color":"#2b2b2b"
+            }
+          },
+
+          // --- PLACES ---
+          {
+            id: "places",
+            type: "symbol",
+            source: "omv",
+            "source-layer":"place",
+            layout:{
+              "text-field":["coalesce", ["get","name"], ["get","name_en"]],
+              "text-size": [
+                "interpolate", ["linear"], ["zoom"],
+                4, 10,
+                8, 14,
+                12, 18
+              ]
+            },
+            paint:{ "text-color":"#2b2b2b", "text-halo-color":"#fff", "text-halo-width":1 }
+          }
+        ]
+      },
+      center: [-2.75, 54.45],  // Lake District-ish view
+      zoom: 8
+    });
+
+    // Layer toggles
+    map.on("load", () => {
+      const toggleMap = {
+        // checkbox id -> display layer id(s)
+        land: ["land","landuse"],
+        water: ["water","waterway"],
+        parks: ["parks"],
+        footpaths: ["footpaths"],
+        tracks: ["tracks"],
+        roads: ["roads"],
+        peaks: ["peaks"],
+        places: ["places"]
+      };
+      document.querySelectorAll('#legend input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener("change", e => {
+          const key = e.target.dataset.layer;
+          (toggleMap[key] || []).forEach(id => {
+            if (map.getLayer(id)) {
+              map.setLayoutProperty(id, "visibility", e.target.checked ? "visible" : "none");
+            }
+          });
+        });
+      });
+    });
+
+    // Clean up protocol on unload (avoids dev hot-reload warnings)
+    window.addEventListener("beforeunload", () => {
+      maplibregl.removeProtocol("pmtiles");
+    });
+  </script>
+</body>
+</html>
