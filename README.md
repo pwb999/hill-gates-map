@@ -80,6 +80,12 @@ Clearly vector is better as you can style EACH Feature to your own choice.
 
 OFFLINE - Can I build an offline map and data tile set in iphone format for FREE ????    
 =====================================================================================
+19th September 
+Updated to index26.html. This shows more TF Vector Layers and exposes precise BARRIERS as points and lines.   
+https://s3.eu-west-2.amazonaws.com/www.libre-maps.com/cumbria/index26.html   
+
+
+
 
 
 
