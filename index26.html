@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Hill Gates Map (MapLibre + Thunderforest Vector v2 + PMTiles)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- MapLibre GL -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+  <!-- PMTiles -->
+  <script src="https://unpkg.com/pmtiles@3.0.2/dist/pmtiles.js"></script>
+
+  <style>
+    html, body { margin:0; height:100%; }
+    #map { width:100%; height:100vh; }
+    .maplibregl-ctrl-attrib { font-size: 11px; }
+
+    .panel {
+      position: absolute; top: 50px; left: 10px; z-index: 1;
+      background: rgba(255,255,255,0.95); padding: 10px 12px; border-radius: 8px;
+      font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      max-width: 320px;
+      display: none;
+    }
+    .panel h3 { margin: 8px 0 6px; font-size: 14px; font-weight: 700; }
+    .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.2); display: inline-block; flex: 0 0 14px; }
+    .sw-red { background: #e53935; }
+    .sw-blue { background: #1e88e5; }
+    .sw-green { background: #43a047; }
+    .sw-black { background: #000000; border-radius: 2px; height: 10px; }
+
+    .legend-note { font-size: 12px; color: #555; margin-top: 6px; }
+
+    .legend-toggle {
+      position: absolute; top: 10px; left: 10px; z-index: 2;
+      background: #fff; border: 1px solid #ccc; border-radius: 4px;
+      padding: 6px 10px; font-size: 13px; cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+    .legend-toggle:hover { background: #f0f0f0; }
+
+    /* Popup readability */
+    .maplibregl-popup-content {
+      padding: 8px 10px;
+      font: 12px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    .popup-title { font-weight: 700; margin-bottom: 4px; }
+    .popup-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+    .popup-key { color: #444; }
+    .popup-val { color: #111; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+
+<button class="legend-toggle">Legend</button>
+
+<div class="panel" id="legend-panel">
+  <h3>Basemap</h3>
+  <label class="row"><input type="radio" name="basemap" value="outdoors" checked> Thunderforest Outdoors (raster)</label>
+  <label class="row"><input type="radio" name="basemap" value="landscape"> Thunderforest Landscape (raster)</label>
+  <label class="row"><input type="radio" name="basemap" value="osm"> OSM Standard (raster)</label>
+  <label class="row"><input type="radio" name="basemap" value="none"> None (vector-only)</label>
+
+  <h3>TF Vector Layers</h3>
+  <label class="row"><input type="checkbox" id="chk-tf-road" checked> Roads</label>
+  <label class="row"><input type="checkbox" id="chk-tf-paths" checked> Paths / Footways</label>
+  <label class="row"><input type="checkbox" id="chk-tf-barrier-line" checked> Barriers (lines)</label>
+  <label class="row"><input type="checkbox" id="chk-tf-barrier-points" checked> Barriers (gates/stiles)</label>
+  <label class="row"><input type="checkbox" id="chk-tf-hillshade" checked> Hillshade</label>
+  <label class="row"><input type="checkbox" id="chk-tf-wood" checked> Woodland</label>
+  <label class="row"><input type="checkbox" id="chk-tf-landcover" checked> Landcover (other)</label>
+  <label class="row"><input type="checkbox" id="chk-tf-water" checked> Water (rivers & lakes)</label>
+
+  <h3>Your Layers</h3>
+  <label class="row"><input type="checkbox" id="chk-gates" checked><span class="swatch sw-red"></span> Gates</label>
+  <label class="row"><input type="checkbox" id="chk-stiles" checked><span class="swatch sw-blue"></span> Stiles</label>
+  <label class="row"><input type="checkbox" id="chk-kissing" checked><span class="swatch sw-green"></span> Kissing Gates</label>
+  <label class="row"><input type="checkbox" id="chk-walls" checked><span class="swatch sw-black"></span> Walls (dashed)</label>
+
+  <div class="legend-note">Tip: choose "None (vector-only)" to style a clean map from Thunderforest vector layers + your PMTiles overlays.</div>
+</div>
+
+<script>
+  // === PMTiles protocol ===
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
+
+  // === Data URLs ===
+  // Use relative path if cumbria.pmtiles sits next to this file.
+  const CUMBRIA_URL = "./cumbria.pmtiles";
+  protocol.add(new pmtiles.PMTiles(CUMBRIA_URL));
+
+  // Thunderforest Vector v2 TileJSON (use your key)
+  const TF_V2_TILEJSON = "https://tile.thunderforest.com/thunderforest.outdoors-v2.json?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae";
+
+  // === Map style ===
+  const style = {
+    "version": 8,
+    "sources": {
+      /* Raster basemaps */
+      "tf-outdoors": {
+        "type": "raster",
+        "tiles": ["https://tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae"],
+        "tileSize": 256, "maxzoom": 20
+      },
+      "tf-landscape": {
+        "type": "raster",
+        "tiles": ["https://tile.thunderforest.com/landscape/{z}/{x}/{y}.png?apikey=d84b6d1e1a4e4762a54350b8fe7dc9ae"],
+        "tileSize": 256, "maxzoom": 20
+      },
+      "osm-standard": {
+        "type": "raster",
+        "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        "tileSize": 256, "maxzoom": 19,
+        "attribution": "© OpenStreetMap contributors"
+      },
+
+      /* Thunderforest Vector v2 */
+      "tf-v2": { "type": "vector", "url": TF_V2_TILEJSON },
+
+      /* Your single PMTiles source */
+      "cumbria": { "type": "vector", "url": "pmtiles://" + CUMBRIA_URL }
+    },
+    "layers": [
+      /* Raster layers (toggleable) */
+      { "id": "tf-outdoors-layer", "type": "raster", "source": "tf-outdoors", "layout": { "visibility": "visible" } },
+      { "id": "tf-landscape-layer", "type": "raster", "source": "tf-landscape", "layout": { "visibility": "none" } },
+      { "id": "osm-layer", "type": "raster", "source": "osm-standard", "layout": { "visibility": "none" } },
+
+      /* Thunderforest vector — polygons first (land) */
+      { "id":"tf-landcover-lowzoom","type":"fill","source":"tf-v2","source-layer":"landcover-lowzoom",
+        "maxzoom":9,
+        "paint":{"fill-color":"#e8f3e8","fill-opacity":0.6}
+      },
+      { "id":"tf-wood","type":"fill","source":"tf-v2","source-layer":"landcover","minzoom":8,
+        "filter":["in",["get","type"],["literal",["forest","wood"]]],
+        "paint":{"fill-color":"#b9e2b1","fill-opacity":0.7}
+      },
+      { "id":"tf-landcover","type":"fill","source":"tf-v2","source-layer":"landcover","minzoom":8,
+        "filter":["!",["in",["get","type"],["literal",["forest","wood"]]]],
+        "paint":{"fill-color":"#eeeeee","fill-opacity":0.6}
+      },
+      { "id":"tf-landuse","type":"fill","source":"tf-v2","source-layer":"landuse","minzoom":8,
+        "paint":{
+          "fill-color":[
+            "match",["get","type"],
+            "park","#cfeec5","golf_course","#cfeec5","pitch","#d8f1d8",
+            "industrial","#f1ecec","commercial","#efeae0","residential","#f6f6f6",
+            "school","#e8f0ff","university","#e8f0ff","cemetery","#e3f1e3",
+            /* default */ "#f4f4f4"
+          ],
+          "fill-opacity":0.6
+        }
+      },
+
+      /* Hillshade polygons (subtle) */
+      { "id":"tf-hillshade","type":"fill","source":"tf-v2","source-layer":"hillshade","minzoom":10,
+        "paint":{"fill-color":"#000","fill-opacity":["interpolate",["linear"],["get","level"],110,0.15,180,0.05,230,0.12]}
+      },
+
+      /* Water */
+      { "id":"tf-water","type":"fill","source":"tf-v2","source-layer":"water","minzoom":5,
+        "paint":{"fill-color":"#b3d9ff","fill-opacity":0.7}
+      },
+      { "id":"tf-waterway","type":"line","source":"tf-v2","source-layer":"waterway","minzoom":9,
+        "paint":{
+          "line-color":"#1e90ff",
+          "line-width":["interpolate",["linear"],["zoom"], 9,0.4, 12,0.8, 14,1.4, 18,2.4]
+        }
+      },
+
+      /* Roads & paths */
+      { "id":"tf-road","type":"line","source":"tf-v2","source-layer":"road","minzoom":5,
+        "paint":{
+          "line-color":"#777",
+          "line-width":["interpolate",["linear"],["zoom"], 5,0.2, 10,0.8, 14,2.0, 18,3.5]
+        }
+      },
+      { "id":"tf-paths","type":"line","source":"tf-v2","source-layer":"path","minzoom":11,
+        "paint":{
+          "line-color":"#6b9b37",
+          "line-dasharray":[2,2],
+          "line-width":["interpolate",["linear"],["zoom"], 11,0.6, 14,1.2, 17,2.0]
+        }
+      },
+
+      /* Barriers: lines and points */
+      { "id":"tf-barrier-line","type":"line","source":"tf-v2","source-layer":"barrier","minzoom":12,
+        "filter":["in",["get","feature"],["literal",["fence","wall","hedge","cliff","city_wall","pipeline","goods_conveyor"]]],
+        "paint":{"line-color":"#444","line-dasharray":[4,2],
+          "line-width":["interpolate",["linear"],["zoom"],12,0.6,16,1.4]}
+      },
+      { "id":"tf-barrier-points","type":"circle","source":"tf-v2","source-layer":"barrier","minzoom":13,
+        "filter":["in",["get","feature"],["literal",["gate","stile","kissing_gate","bollard","block"]]],
+        "paint":{
+          "circle-radius":["interpolate",["linear"],["zoom"],13,2,16,3.5],
+          "circle-color":["match",["get","feature"],
+            "gate","#e53935","stile","#1e88e5","kissing_gate","#43a047",
+            /* default */ "#777"
+          ],
+          "circle-stroke-color":"#fff","circle-stroke-width":1
+        }
+      },
+
+      /* Buildings (useful at large scales) */
+      { "id":"tf-buildings","type":"fill","source":"tf-v2","source-layer":"building","minzoom":14,
+        "paint":{"fill-color":"#d0d0d0","fill-opacity":["interpolate",["linear"],["zoom"],14,0.4,16,0.7]}
+      },
+
+      /* Your overlays from cumbria.pmtiles */
+      { "id": "gates-circles", "type": "circle", "source": "cumbria", "source-layer": "gates",
+        "paint": {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3, 18, 5],
+          "circle-color": "#e53935",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1
+        }
+      },
+      { "id": "stiles-circles", "type": "circle", "source": "cumbria", "source-layer": "stiles",
+        "paint": {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3, 18, 5],
+          "circle-color": "#1e88e5",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1
+        }
+      },
+      { "id": "kissing-circles", "type": "circle", "source": "cumbria", "source-layer": "kissing_gates",
+        "paint": {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 2, 14, 3, 18, 5],
+          "circle-color": "#43a047",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1
+        }
+      },
+      { "id": "walls-line", "type": "line", "source": "cumbria", "source-layer": "walls",
+        "layout": { "line-cap": "round", "line-join": "round" },
+        "paint": {
+          "line-color": "#000000",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 16, 3],
+          "line-opacity": 0.9,
+          "line-dasharray": [4, 2]
+        }
+      }
+    ]
+  };
+
+  // === Create map ===
+  const map = new maplibregl.Map({
+    container: "map",
+    style,
+    center: [-3.08, 54.46],
+    zoom: 12,
+    hash: true,
+    attributionControl: false
+  });
+
+  // Attribution (Thunderforest + OSM)
+  map.addControl(new maplibregl.AttributionControl({
+    compact: true,
+    customAttribution: 'Maps © Thunderforest, Data © OpenStreetMap contributors'
+  }), 'bottom-right');
+
+  function setVisibility(layerId, visible) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+    }
+  }
+
+  // --- Helpers for hover/click popup on your point layers ---
+  function escapeHtml(str) {
+    return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+  function propsToHtml(props) {
+    const titleKeys = ["name","ref","id","type","@id"];
+    let title=null; for (const k of titleKeys) if (props && props[k]) { title=`${k}: ${props[k]}`; break; }
+    const skip = new Set(["geometry","geom","layer","source"]);
+    const rows=[];
+    for (const [k,v] of Object.entries(props||{})) {
+      if (skip.has(k) || v===null || v===undefined || v==="") continue;
+      rows.push(`<div class="popup-key">${escapeHtml(k)}</div><div class="popup-val">${escapeHtml(v)}</div>`);
+    }
+    return `${title?`<div class="popup-title">${escapeHtml(title)}</div>`:""}<div class="popup-grid">${rows.join("")||"<div class='popup-key'>No attributes</div><div class='popup-val'>—</div>"}</div>`;
+  }
+
+  map.on("load", () => {
+    // Keep TF vector layers under your overlays
+    const below = "gates-circles";
+    ["tf-buildings","tf-barrier-points","tf-barrier-line","tf-paths","tf-road","tf-waterway","tf-water","tf-hillshade","tf-landuse","tf-landcover","tf-wood","tf-landcover-lowzoom"].forEach(id=>{
+      if (map.getLayer(id) && map.getLayer(below)) map.moveLayer(id, below);
+    });
+
+    // Your overlay toggles
+    document.getElementById("chk-gates").onchange   = e => setVisibility("gates-circles", e.target.checked);
+    document.getElementById("chk-stiles").onchange  = e => setVisibility("stiles-circles", e.target.checked);
+    document.getElementById("chk-kissing").onchange = e => setVisibility("kissing-circles", e.target.checked);
+    document.getElementById("chk-walls").onchange   = e => setVisibility("walls-line", e.target.checked);
+
+    // TF vector toggles
+    document.getElementById("chk-tf-road").onchange          = e => setVisibility("tf-road", e.target.checked);
+    document.getElementById("chk-tf-paths").onchange         = e => setVisibility("tf-paths", e.target.checked);
+    document.getElementById("chk-tf-barrier-line").onchange  = e => setVisibility("tf-barrier-line", e.target.checked);
+    document.getElementById("chk-tf-barrier-points").onchange= e => setVisibility("tf-barrier-points", e.target.checked);
+    document.getElementById("chk-tf-hillshade").onchange     = e => setVisibility("tf-hillshade", e.target.checked);
+    document.getElementById("chk-tf-wood").onchange          = e => setVisibility("tf-wood", e.target.checked);
+    document.getElementById("chk-tf-landcover").onchange     = e => setVisibility("tf-landcover", e.target.checked);
+    document.getElementById("chk-tf-water").onchange         = e => { setVisibility("tf-water", e.target.checked); setVisibility("tf-waterway", e.target.checked); };
+
+    // Basemap toggles
+    document.querySelectorAll("input[name='basemap']").forEach(radio => {
+      radio.addEventListener("change", e => {
+        const choice = e.target.value;
+        map.setLayoutProperty("tf-outdoors-layer", "visibility", choice === "outdoors" ? "visible" : "none");
+        map.setLayoutProperty("tf-landscape-layer", "visibility", choice === "landscape" ? "visible" : "none");
+        map.setLayoutProperty("osm-layer", "visibility", choice === "osm" ? "visible" : "none");
+        if (choice === "none") {
+          map.setLayoutProperty("tf-outdoors-layer", "visibility", "none");
+          map.setLayoutProperty("tf-landscape-layer", "visibility", "none");
+          map.setLayoutProperty("osm-layer", "visibility", "none");
+        }
+      });
+    });
+
+    // Legend toggle
+    const legendBtn = document.querySelector(".legend-toggle");
+    const legendPanel = document.getElementById("legend-panel");
+    legendBtn.addEventListener("click", () => {
+      legendPanel.style.display = (legendPanel.style.display === "none" || !legendPanel.style.display) ? "block" : "none";
+    });
+
+    // Controls
+    const scale = new maplibregl.ScaleControl({ maxWidth: 120, unit: "imperial" });
+    map.addControl(scale, "bottom-left");
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserHeading: true,
+      fitBoundsOptions: { maxZoom: 15 }
+    });
+    map.addControl(geolocate, "top-right");
+    const nav = new maplibregl.NavigationControl({ visualizePitch: true });
+    map.addControl(nav, "top-right");
+
+    // Hover + click popups for your point layers
+    const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+    function attachHover(layerId) {
+      map.on("mouseenter", layerId, () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mousemove", layerId, (e) => {
+        if (!e.features || !e.features.length) return;
+        const f = e.features[0];
+        hoverPopup.setLngLat(e.lngLat).setHTML(propsToHtml(f.properties||{})).addTo(map);
+      });
+      map.on("mouseleave", layerId, () => { map.getCanvas().style.cursor = ""; hoverPopup.remove(); });
+    }
+    function attachClick(layerId){
+      map.on('click', layerId, (e)=>{
+        const f = e.features && e.features[0];
+        if(!f) return;
+        new maplibregl.Popup().setLngLat(e.lngLat).setHTML(propsToHtml(f.properties||{})).addTo(map);
+      });
+    }
+    ["gates-circles","stiles-circles","kissing-circles"].forEach(id => { attachHover(id); attachClick(id); });
+  });
+</script>
+</body>
+</html>
